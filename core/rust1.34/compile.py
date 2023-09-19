@@ -59,6 +59,12 @@ def build(tgt_dir):
      if "RELEASE" in os.environ:
          cmd += "--release"
          bin_dir = "release"
+     
+     # env = {
+     #     # "CARGO_HOME": "/home/manri-urv/.cargo/bin/cargo",
+     #     "PATH": "/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/manri-urv/.cargo/bin",
+     #     # "RUSTUP_HOME": "/home/manri-urv/.cargo/bin/rustup",
+     # }
      env = {
          "CARGO_HOME": "/usr/local/cargo",
          "PATH": "/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",

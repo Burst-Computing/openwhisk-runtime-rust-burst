@@ -17,10 +17,10 @@
 
 # build go proxy from source
 FROM golang:1.20 AS builder_source
-ARG GO_PROXY_GITHUB_USER=apache
-ARG GO_PROXY_GITHUB_BRANCH=master
+ARG GO_PROXY_GITHUB_USER=CLOUDLAB-URV
+ARG GO_PROXY_GITHUB_BRANCH=burst-1
 RUN git clone --branch ${GO_PROXY_GITHUB_BRANCH} \
-   https://github.com/${GO_PROXY_GITHUB_USER}/openwhisk-runtime-go /src ;\
+   https://github.com/${GO_PROXY_GITHUB_USER}/openwhisk-runtime-go-burst /src ;\
    cd /src ; env GO111MODULE=on CGO_ENABLED=0 go build main/proxy.go && \
    mv proxy /bin/proxy
 
@@ -36,7 +36,7 @@ RUN curl -sL \
 FROM rust:1.34
 
 # select the builder to use
-ARG GO_PROXY_BUILD_FROM=release
+ARG GO_PROXY_BUILD_FROM=source
 
 COPY --from=builder_source /bin/proxy /bin/proxy_source
 COPY --from=builder_release /bin/proxy /bin/proxy_release
@@ -49,4 +49,4 @@ RUN cd /usr/src ; cargo build
 ENV PYTHONIOENCODING=utf8
 ENV OW_COMPILER=/bin/compile.py
 WORKDIR /action
-ENTRYPOINT ["/bin/proxy"]
+CMD ["/bin/proxy", "-debug"]
