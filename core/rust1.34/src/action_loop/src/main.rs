@@ -23,6 +23,7 @@ use std::{
     collections::HashMap,
     env,
     fs::File,
+    thread::JoinHandle,
     io::{stderr, stdin, stdout, BufRead, Write},
     os::unix::io::FromRawFd,
 };
@@ -39,6 +40,9 @@ fn log_error(fd3: &mut File, error: Error) {
     eprintln!("error: {}", error);
 }
 
+
+// new burst input have got the following format:
+// {"value": [{"name": "Pedro G.", "param2": "value2"}, ..., {"name": "Marc S.", "param2": "value2"}]
 fn main() {
     let mut fd3 = unsafe { File::from_raw_fd(3) };
     let stdin = stdin();
@@ -48,29 +52,49 @@ fn main() {
         match parsed_input {
             Ok(input) => {
                 for (key, val) in input.environment {
-                   if let Some(string_value) = val.as_str() {
+                    if let Some(string_value) = val.as_str() {
                         env::set_var(format!("__OW_{}", key.to_uppercase()), string_value);
                     } else {
                         env::set_var(format!("__OW_{}", key.to_uppercase()), val.to_string());
                     };
                 }
-                match actionMain(input.value) {
-                    Ok(action_result) => match serde_json::to_string(&action_result) {
-                        Ok(response) => {
-                            writeln!(&mut fd3, "{}", response).expect("Error writing on fd3")
-                        }
-                        Err(err) => log_error(&mut fd3, err),
-                    },
-                    Err(err) => {
-                        log_error(&mut fd3, err);
+                // if burst, create inputs for each function
+                let burst = input.value.is_array();
+                let mut inputs: Vec<Value> = Vec::new();
+                let mut handlers: Vec<JoinHandle<Result<Value, Error>>> = Vec::new();
+                if burst {
+                    // each function will receive the next format:
+                    // Value class: {"name": "Pedro G.", "param2": "value2"}
+                    for value in input.value.as_array().unwrap() {
+                        inputs.push(value.clone());
+                    }
+                } else {
+                    inputs.push(input.value);
+                }
+                for input in inputs {
+                    handlers.push(std::thread::spawn(move || { return actionMain(input); }));
+                }
+                // new burst output have got the following format:
+                // [result1, result2, ..., resultN]
+                let mut results: Vec<Value> = Vec::new();
+                for handle in handlers {
+                    match handle.join().unwrap() {
+                        Ok(result) => results.push(result),
+                        Err(error) => log_error(&mut fd3, error),
                     }
                 }
+                let output;
+                if burst {
+                    output = Value::Array(results);
+                } else {
+                    output = results[0].clone();
+                }
+                writeln!(fd3, "{}\n", output).expect("Error writing on fd3");
+                stdout().flush().expect("Error flushing stdout");
+                stderr().flush().expect("Error flushing stderr");
             }
-            Err(err) => {
-                log_error(&mut fd3, err);
-            }
+            Err(error) => log_error(&mut fd3, error)
         }
-        stdout().flush().expect("Error flushing stdout");
-        stderr().flush().expect("Error flushing stderr");
     }
 }
+
