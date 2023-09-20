@@ -59,15 +59,20 @@ def build(tgt_dir):
      if "RELEASE" in os.environ:
          cmd += "--release"
          bin_dir = "release"
+     # env = {
+     #     "CARGO_HOME": "/usr/local/cargo",
+     #     "PATH": "/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+     #     "RUSTUP_HOME": "/usr/local/rustup"
+     # }
      env = {
-         "CARGO_HOME": "/usr/local/cargo",
-         "PATH": "/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-         "RUSTUP_HOME": "/usr/local/rustup"
+         # "CARGO_HOME": "/home/manri-urv/.cargo/bin/cargo",
+         "PATH": "/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/manri-urv/.cargo/bin",
+         # "RUSTUP_HOME": "/home/manri-urv/.cargo/bin/rustup",
      }
      p = subprocess.Popen(cmd,
            stdout=subprocess.PIPE,
            stderr=subprocess.PIPE,
-           cwd="/usr/src", env=env)
+           cwd=f"{SOURCE_FOLDER}", env=env)
      (o, e) = p.communicate()
      if isinstance(o, bytes): o = o.decode('utf-8')
      if isinstance(e, bytes): e = e.decode('utf-8')
@@ -76,34 +81,35 @@ def build(tgt_dir):
         sys.stdout.write(e)
      else:
        shutil.move(
-             "/usr/src/target/%s/action_loop" % bin_dir,
+             f"{SOURCE_FOLDER}/target/%s/action_loop" % bin_dir,
              "%s/exec" % tgt_dir)
 
 def sources(main, src_dir):
     # move away the action dir and replace with the new
     tmpname = str(int(time.time()))
-    shutil.move("/usr/src/actions", "/usr/src/src%s" % tmpname)
-    shutil.move(src_dir, "/usr/src/actions")
+    shutil.move(f"{SOURCE_FOLDER}/actions", f"{SOURCE_FOLDER}/src%s" % tmpname)
+    shutil.move(src_dir, f"{SOURCE_FOLDER}/actions")
 
     # move exec in the right place
-    src_file = "/usr/src/actions/exec"
+    src_file = f"{SOURCE_FOLDER}/actions/exec"
     if exists(src_file):
-        os.makedirs("/usr/src/actions/src", mode=0o755, exist_ok=True)
-        copy_replace(src_file, "/usr/src/actions/src/lib.rs")
+        os.makedirs(f"{SOURCE_FOLDER}/actions/src", mode=0o755, exist_ok=True)
+        copy_replace(src_file, f"{SOURCE_FOLDER}/actions/src/lib.rs")
 
     # add a cargo.toml if needed
-    cargo_action_file = "/usr/src/actions/Cargo.toml"
+    cargo_action_file = f"{SOURCE_FOLDER}/actions/Cargo.toml"
     if not exists(cargo_action_file):
         write_file(cargo_action_file, cargo_action)
 
     # write the boilerplate in a temp dir
-    launcher = "/usr/src/action_loop/tmp%s" % tmpname
-    shutil.move("/usr/src/action_loop/src/main.rs", launcher)
-    copy_replace(launcher, "/usr/src/action_loop/src/main.rs",
+    launcher = f"{SOURCE_FOLDER}/action_loop/tmp%s" % tmpname
+    shutil.move(f"{SOURCE_FOLDER}/action_loop/src/main.rs", launcher)
+    copy_replace(launcher, f"{SOURCE_FOLDER}/action_loop/src/main.rs",
           "use actions::main as actionMain;",
           "use actions::%s as actionMain;" % main )
 
 if __name__ == '__main__':
+    SOURCE_FOLDER = os.getenv("__OW_SOURCE_FOLDER", "/usr/src")
     if len(sys.argv) < 4:
         sys.stdout.write("usage: <main-function> <source-dir> <target-dir>\n")
         sys.stdout.flush()
