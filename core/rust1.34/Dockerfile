@@ -36,7 +36,7 @@ RUN curl -sL \
 FROM rust:1.34
 
 # select the builder to use
-ARG GO_PROXY_BUILD_FROM=release
+ARG GO_PROXY_BUILD_FROM=source
 
 COPY --from=builder_source /bin/proxy /bin/proxy_source
 COPY --from=builder_release /bin/proxy /bin/proxy_release
@@ -49,4 +49,4 @@ RUN cd /usr/src ; cargo build
 ENV PYTHONIOENCODING=utf8
 ENV OW_COMPILER=/bin/compile.py
 WORKDIR /action
-ENTRYPOINT ["/bin/proxy"]
+CMD ["/bin/proxy", "-debug"]

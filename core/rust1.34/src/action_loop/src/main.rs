@@ -42,7 +42,10 @@ fn log_error(fd3: &mut File, error: Error) {
 
 
 // new burst input have got the following format:
-// {"value": [{"name": "Pedro G.", "param2": "value2"}, ..., {"name": "Marc S.", "param2": "value2"}]
+// {
+//    "value": [{"name": "Pedro G.", "param2": "value2"}, ..., {"name": "Marc S.", "param2": "value2"}],
+//    "burst_info: {invoker0: [0, 3], invoker1: [4, 13], ..., invokerN: 180, 199]}
+// }
 fn main() {
     let mut fd3 = unsafe { File::from_raw_fd(3) };
     let stdin = stdin();
