@@ -24,5 +24,5 @@ edition = "2018"
 serde_json = "1.0"
 serde = "1.0"
 serde_derive = "1.0"
-
-
+tokio = { version = "1.32.0", features = ["full"] }
+burst-communication-middleware = { path = "../burst-communication-middleware" }

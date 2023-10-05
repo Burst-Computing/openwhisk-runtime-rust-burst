@@ -39,6 +39,29 @@ def copy_replace(src, dst, match=None, replacement=""):
             body = body.replace(match, replacement)
         write_file(dst, body)
 
+def modify_main_declaration(file_path, main):
+    # Read the content of the file
+    with open(file_path, 'r', encoding='utf-8') as file:
+        content = file.read()
+
+    # Replace the synchronous main function with an asynchronous one
+    # and add a middleware parameter
+    lines = content.splitlines()
+    for i in range(len(lines)):
+        if lines[i].startswith('pub fn %s' % main):
+            lines[i] = lines[i].replace('pub fn %s' % main, 'pub async fn %s' % main)
+            lines[i] = lines[i].replace('args: Value', 'args: Value, mw: Option<Middleware>')
+            # Add use statement for the middleware
+            lines.insert(0, 'use burst_communication_middleware::Middleware;')
+            break
+    
+    
+    modified_content = '\n'.join(lines)
+
+    # Write the modified content back to the file
+    with open(file_path, 'w', encoding='utf-8') as file:
+        file.write(modified_content)
+
 ## cargo
 cargo_action = """[package]
 name = "actions"
@@ -50,6 +73,8 @@ edition = "2018"
 serde_json = "1.0"
 serde = "1.0"
 serde_derive = "1.0"
+tokio = { version = "1.32.0", features = ["full"] }
+burst-communication-middleware = { path = "../burst-communication-middleware" }
 """
 
 def build(tgt_dir):
@@ -90,6 +115,7 @@ def sources(main, src_dir):
     if exists(src_file):
         os.makedirs("/usr/src/actions/src", mode=0o755, exist_ok=True)
         copy_replace(src_file, "/usr/src/actions/src/lib.rs")
+        modify_main_declaration("/usr/src/actions/src/lib.rs", main)
 
     # add a cargo.toml if needed
     cargo_action_file = "/usr/src/actions/Cargo.toml"

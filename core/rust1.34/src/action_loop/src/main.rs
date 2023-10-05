@@ -17,20 +17,23 @@
 
 use actions::main as actionMain;
 
+use burst_communication_middleware::{Middleware, MiddlewareArguments};
 use serde_derive::Deserialize;
 use serde_json::{Error, Value};
 use std::{
     collections::HashMap,
     env,
     fs::File,
-    thread::JoinHandle,
     io::{stderr, stdin, stdout, BufRead, Write},
     os::unix::io::FromRawFd,
+    thread::JoinHandle,
 };
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 struct Input {
     value: Value,
+    invoker_id: Option<String>,
+    burst_info: Option<HashMap<String, Vec<u32>>>,
     #[serde(flatten)]
     environment: HashMap<String, Value>,
 }
@@ -40,20 +43,24 @@ fn log_error(fd3: &mut File, error: Error) {
     eprintln!("error: {}", error);
 }
 
+const RABBITMQ_URI: &str = "amqp://localhost:5672";
 
 // new burst input have got the following format:
 // {
 //    "value": [{"name": "Pedro G.", "param2": "value2"}, ..., {"name": "Marc S.", "param2": "value2"}],
 //    "burst_info: {invoker0: [0, 3], invoker1: [4, 13], ..., invokerN: 180, 199]}
 // }
-fn main() {
+#[tokio::main]
+async fn main() {
     let mut fd3 = unsafe { File::from_raw_fd(3) };
     let stdin = stdin();
     for line in stdin.lock().lines() {
         let buffer: String = line.expect("Error reading line");
+        println!("buffer: {}", buffer);
         let parsed_input: Result<Input, Error> = serde_json::from_str(&buffer);
         match parsed_input {
             Ok(input) => {
+                println!("input: {:?}", input);
                 for (key, val) in input.environment {
                     if let Some(string_value) = val.as_str() {
                         env::set_var(format!("__OW_{}", key.to_uppercase()), string_value);
@@ -74,8 +81,37 @@ fn main() {
                 } else {
                     inputs.push(input.value);
                 }
+                let mut mw = None;
+                if let Some(burst_info) = input.burst_info {
+                    let upper_limit = burst_info
+                        .get(format!("invoker{}", burst_info.len() - 1).as_str())
+                        .unwrap()[1];
+                    let lower_limit = burst_info.get("invoker0").unwrap()[0];
+
+                    let global_range = lower_limit..upper_limit + 1;
+
+                    let local_range = burst_info.get(&input.invoker_id.unwrap()).unwrap();
+                    let local_range = local_range[0]..local_range[1] + 1;
+
+                    mw = Some(
+                        Middleware::init_global(MiddlewareArguments::new(
+                            RABBITMQ_URI.to_string(),
+                            global_range,
+                            local_range,
+                        ))
+                        .await
+                        .expect("Error initializing middleware"),
+                    );
+                }
                 for input in inputs {
-                    handlers.push(std::thread::spawn(move || { return actionMain(input); }));
+                    let mw = mw.clone();
+                    handlers.push(std::thread::spawn(move || {
+                        tokio::runtime::Builder::new_multi_thread()
+                            .enable_all()
+                            .build()
+                            .unwrap()
+                            .block_on(actionMain(input, mw))
+                    }));
                 }
                 // new burst output have got the following format:
                 // [result1, result2, ..., resultN]
@@ -96,8 +132,7 @@ fn main() {
                 stdout().flush().expect("Error flushing stdout");
                 stderr().flush().expect("Error flushing stderr");
             }
-            Err(error) => log_error(&mut fd3, error)
+            Err(error) => log_error(&mut fd3, error),
         }
     }
 }
-
