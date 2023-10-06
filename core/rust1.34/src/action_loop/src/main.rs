@@ -43,12 +43,13 @@ fn log_error(fd3: &mut File, error: Error) {
     eprintln!("error: {}", error);
 }
 
-const RABBITMQ_URI: &str = "amqp://localhost:5672";
+const RABBITMQ_URI: &str = "amqp://172.17.0.2:5672";
 
 // new burst input have got the following format:
 // {
 //    "value": [{"name": "Pedro G.", "param2": "value2"}, ..., {"name": "Marc S.", "param2": "value2"}],
-//    "burst_info: {invoker0: [0, 3], invoker1: [4, 13], ..., invokerN: 180, 199]}
+//    "burst_info: {invoker0: [0, 3], invoker1: [4, 13], ..., invokerN: 180, 199]},
+//    "invoker_id": "invoker0"
 // }
 #[tokio::main]
 async fn main() {
@@ -81,38 +82,67 @@ async fn main() {
                 } else {
                     inputs.push(input.value);
                 }
-                let mut mw = None;
+
+                // Prepare middleware for burst communication
                 if let Some(burst_info) = input.burst_info {
+                    // For testing purposes
+                    let mut burst_info = HashMap::new();
+                    burst_info.insert("invoker0".to_string(), vec![0, 0]);
+                    burst_info.insert("invoker1".to_string(), vec![1, 1]);
+
+                    // Get global and local ranges
                     let upper_limit = burst_info
                         .get(format!("invoker{}", burst_info.len() - 1).as_str())
                         .unwrap()[1];
                     let lower_limit = burst_info.get("invoker0").unwrap()[0];
-
                     let global_range = lower_limit..upper_limit + 1;
-
                     let local_range = burst_info.get(&input.invoker_id.unwrap()).unwrap();
                     let local_range = local_range[0]..local_range[1] + 1;
 
-                    mw = Some(
-                        Middleware::init_global(MiddlewareArguments::new(
-                            RABBITMQ_URI.to_string(),
-                            global_range,
-                            local_range,
-                        ))
-                        .await
-                        .expect("Error initializing middleware"),
-                    );
+                    println!("global_range: {:?}", global_range);
+                    println!("local_range: {:?}", local_range);
+
+                    // Initialize middleware
+                    let mw = Middleware::init_global(MiddlewareArguments::new(
+                        RABBITMQ_URI.to_string(),
+                        global_range,
+                        local_range.clone(),
+                    ))
+                    .await
+                    .expect("Error initializing middleware");
+
+                    // Create threads
+                    for (index, input) in inputs.into_iter().enumerate() {
+                        let mut mw = mw.clone();
+                        let start = local_range.start;
+                        handlers.push(std::thread::spawn(move || {
+                            tokio::runtime::Builder::new_multi_thread()
+                                .enable_all()
+                                .build()
+                                .unwrap()
+                                .block_on(async move {
+                                    mw.init_local(start + index as u32)
+                                        .await
+                                        .expect("Error initializing local middleware");
+                                    println!("id: {}", start + index as u32);
+                                    println!("input: {:?}", input);
+                                    actionMain(input, Some(mw)).await
+                                })
+                        }));
+                    }
+                // If not burst, create threads without middleware
+                } else {
+                    for input in inputs {
+                        handlers.push(std::thread::spawn(move || {
+                            tokio::runtime::Builder::new_multi_thread()
+                                .enable_all()
+                                .build()
+                                .unwrap()
+                                .block_on(actionMain(input, None))
+                        }));
+                    }
                 }
-                for input in inputs {
-                    let mw = mw.clone();
-                    handlers.push(std::thread::spawn(move || {
-                        tokio::runtime::Builder::new_multi_thread()
-                            .enable_all()
-                            .build()
-                            .unwrap()
-                            .block_on(actionMain(input, mw))
-                    }));
-                }
+
                 // new burst output have got the following format:
                 // [result1, result2, ..., resultN]
                 let mut results: Vec<Value> = Vec::new();
