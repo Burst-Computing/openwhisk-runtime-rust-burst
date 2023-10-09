@@ -43,7 +43,7 @@ fn log_error(fd3: &mut File, error: Error) {
     eprintln!("error: {}", error);
 }
 
-const RABBITMQ_URI: &str = "amqp://172.17.0.2:5672";
+const RABBITMQ_URI: &str = "amqp://172.17.0.3:5672";
 
 // new burst input have got the following format:
 // {
@@ -85,16 +85,9 @@ async fn main() {
 
                 // Prepare middleware for burst communication
                 if let Some(burst_info) = input.burst_info {
-                    // For testing purposes
-                    let mut burst_info = HashMap::new();
-                    burst_info.insert("invoker0".to_string(), vec![0, 0]);
-                    burst_info.insert("invoker1".to_string(), vec![1, 1]);
-
                     // Get global and local ranges
-                    let upper_limit = burst_info
-                        .get(format!("invoker{}", burst_info.len() - 1).as_str())
-                        .unwrap()[1];
-                    let lower_limit = burst_info.get("invoker0").unwrap()[0];
+                    let upper_limit = burst_info.values().flatten().max().unwrap().clone();
+                    let lower_limit = burst_info.values().flatten().min().unwrap().clone();
                     let global_range = lower_limit..upper_limit + 1;
                     let local_range = burst_info.get(&input.invoker_id.unwrap()).unwrap();
                     let local_range = local_range[0]..local_range[1] + 1;
