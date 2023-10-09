@@ -33,6 +33,7 @@ use std::{
 struct Input {
     value: Value,
     invoker_id: Option<String>,
+    transaction_id: Option<String>,
     burst_info: Option<HashMap<String, Vec<u32>>>,
     #[serde(flatten)]
     environment: HashMap<String, Value>,
@@ -43,7 +44,7 @@ fn log_error(fd3: &mut File, error: Error) {
     eprintln!("error: {}", error);
 }
 
-const RABBITMQ_URI: &str = "amqp://172.17.0.3:5672";
+const RABBITMQ_URI: &str = "amqp://172.17.0.4:5672";
 
 // new burst input have got the following format:
 // {
@@ -86,8 +87,8 @@ async fn main() {
                 // Prepare middleware for burst communication
                 if let Some(burst_info) = input.burst_info {
                     // Get global and local ranges
-                    let upper_limit = burst_info.values().flatten().max().unwrap().clone();
-                    let lower_limit = burst_info.values().flatten().min().unwrap().clone();
+                    let upper_limit = *burst_info.values().flatten().max().unwrap();
+                    let lower_limit = *burst_info.values().flatten().min().unwrap();
                     let global_range = lower_limit..upper_limit + 1;
                     let local_range = burst_info.get(&input.invoker_id.unwrap()).unwrap();
                     let local_range = local_range[0]..local_range[1] + 1;
