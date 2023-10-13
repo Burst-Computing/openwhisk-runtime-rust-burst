@@ -50,7 +50,13 @@ const RABBITMQ_URI: &str = "amqp://172.17.0.4:5672";
 // {
 //    "value": [{"name": "Pedro G.", "param2": "value2"}, ..., {"name": "Marc S.", "param2": "value2"}],
 //    "burst_info: {invoker0: [0, 3], invoker1: [4, 13], ..., invokerN: 180, 199]},
-//    "invoker_id": "invoker0"
+//    "invoker_id": "invoker0",
+//    "transaction_id": "uuid...",
+//    "rabbitmq": {
+//       "endpoint": "amqp://...",
+//       "user": "guest",
+//       "password": "guest"
+//    }
 // }
 #[tokio::main]
 async fn main() {
