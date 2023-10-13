@@ -53,9 +53,7 @@ const RABBITMQ_URI: &str = "amqp://172.17.0.4:5672";
 //    "invoker_id": "invoker0",
 //    "transaction_id": "uuid...",
 //    "rabbitmq": {
-//       "endpoint": "amqp://...",
-//       "user": "guest",
-//       "password": "guest"
+//       "uri": "amqp://user:passwd@host:port",
 //    }
 // }
 #[tokio::main]
