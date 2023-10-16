@@ -35,16 +35,20 @@ struct Input {
     invoker_id: Option<String>,
     transaction_id: Option<String>,
     burst_info: Option<HashMap<String, Vec<u32>>>,
+    rabbitmq: Option<RabbitMQ>,
     #[serde(flatten)]
     environment: HashMap<String, Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+struct RabbitMQ {
+    uri: String,
 }
 
 fn log_error(fd3: &mut File, error: Error) {
     writeln!(fd3, "{{\"error\":\"{}\"}}\n", error).expect("Error writing on fd3");
     eprintln!("error: {}", error);
 }
-
-const RABBITMQ_URI: &str = "amqp://172.17.0.4:5672";
 
 // new burst input have got the following format:
 // {
@@ -100,12 +104,18 @@ async fn main() {
                     println!("global_range: {:?}", global_range);
                     println!("local_range: {:?}", local_range);
 
+                    let burst_id = input.transaction_id.clone().unwrap();
                     // Initialize middleware
-                    let mw = Middleware::init_global(MiddlewareArguments::new(
-                        RABBITMQ_URI.to_string(),
-                        global_range,
-                        local_range.clone(),
-                    ))
+                    let mw = Middleware::init_global(
+                        MiddlewareArguments::new(
+                            input.rabbitmq.unwrap().uri,
+                            global_range,
+                            local_range.clone(),
+                        )
+                        .exchange_name(burst_id.clone())
+                        .queue_prefix(format!("{}-queue", burst_id))
+                        .build(),
+                    )
                     .await
                     .expect("Error initializing middleware");
 
