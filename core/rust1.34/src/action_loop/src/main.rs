@@ -94,27 +94,42 @@ async fn main() {
 
                 // Prepare middleware for burst communication
                 if let Some(burst_info) = input.burst_info {
-                    // Get global and local ranges
+                    let invoker_id = input.invoker_id.unwrap();
+
+                    // Get global, local and broadcast ranges
                     let upper_limit = *burst_info.values().flatten().max().unwrap();
                     let lower_limit = *burst_info.values().flatten().min().unwrap();
+
                     let global_range = lower_limit..upper_limit + 1;
-                    let local_range = burst_info.get(&input.invoker_id.unwrap()).unwrap();
+
+                    let local_range = burst_info.get(&invoker_id).unwrap();
                     let local_range = local_range[0]..local_range[1] + 1;
+
+                    let broadcast_range = 0..burst_info.len() as u32;
+                    let mut vec = burst_info.keys().into_iter().collect::<Vec<&String>>();
+                    vec.sort();
+                    let grup_id = vec.into_iter().position(|x| x == &invoker_id).unwrap() as u32;
 
                     println!("global_range: {:?}", global_range);
                     println!("local_range: {:?}", local_range);
+                    println!("broadcast_range: {:?}", broadcast_range);
+                    println!("grup_id: {:?}", grup_id);
 
-                    let burst_id = input.transaction_id.clone().unwrap();
+                    let burst_id = input.transaction_id.unwrap();
+
                     // Initialize middleware
                     let mw = Middleware::init_global(
                         MiddlewareArguments::new(
                             input.rabbitmq.unwrap().uri,
                             global_range,
                             local_range.clone(),
+                            broadcast_range,
                         )
-                        .exchange_name(burst_id.clone())
+                        .direct_exchage(format!("{}-direct", burst_id))
+                        .broadcast_exchage_prefix(format!("{}-broadcast", burst_id))
                         .queue_prefix(format!("{}-queue", burst_id))
                         .build(),
+                        grup_id,
                     )
                     .await
                     .expect("Error initializing middleware");

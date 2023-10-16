@@ -1,3 +1,4 @@
 [submodule "core/rust1.34/src/burst-communication-middleware"]
-	path = core/rust1.34/src/burst-communication-middleware
-	url = git@github.com:CLOUDLAB-URV/burst-communication-middleware.git
+  path = core/rust1.34/src/burst-communication-middleware
+  url = git@github.com:CLOUDLAB-URV/burst-communication-middleware.git
+  branch = broadcast
