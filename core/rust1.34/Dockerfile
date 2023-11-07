@@ -49,4 +49,4 @@ RUN cd /usr/src ; cargo build
 ENV PYTHONIOENCODING=utf8
 ENV OW_COMPILER=/bin/compile.py
 WORKDIR /action
-CMD ["/bin/proxy", "-debug"]
+ENTRYPOINT ["/bin/proxy"]
