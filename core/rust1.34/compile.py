@@ -50,9 +50,9 @@ def modify_main_declaration(file_path, main):
     for i in range(len(lines)):
         if lines[i].startswith('pub fn %s' % main):
             lines[i] = lines[i].replace('pub fn %s' % main, 'pub async fn %s' % main)
-            lines[i] = lines[i].replace('args: Value', 'args: Value, mw: Option<Middleware>')
+            lines[i] = lines[i].replace('args: Value', 'args: Value, burst_middleware: Option<BurstMiddleware>')
             # Add use statement for the middleware
-            lines.insert(0, 'use burst_communication_middleware::Middleware;')
+            lines.insert(0, 'use burst_communication_middleware::BurstMiddleware;')
             break
     
     
