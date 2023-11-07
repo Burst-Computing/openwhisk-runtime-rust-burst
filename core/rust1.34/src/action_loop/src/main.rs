@@ -17,16 +17,19 @@
 
 use actions::main as actionMain;
 
-use burst_communication_middleware::{Middleware, MiddlewareArguments};
+use burst_communication_middleware::{
+    BurstMiddleware, BurstOptions, RabbitMQMImpl, RabbitMQOptions, TokioChannelImpl,
+    TokioChannelOptions,
+};
 use serde_derive::Deserialize;
 use serde_json::{Error, Value};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     env,
     fs::File,
     io::{stderr, stdin, stdout, BufRead, Write},
     os::unix::io::FromRawFd,
-    thread::JoinHandle,
+    thread,
 };
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -80,8 +83,8 @@ async fn main() {
                 }
                 // if burst, create inputs for each function
                 let burst = input.value.is_array();
-                let mut inputs: Vec<Value> = Vec::new();
-                let mut handlers: Vec<JoinHandle<Result<Value, Error>>> = Vec::new();
+                let mut inputs = Vec::new();
+                let mut handlers = Vec::new();
                 if burst {
                     // each function will receive the next format:
                     // Value class: {"name": "Pedro G.", "param2": "value2"}
@@ -96,60 +99,59 @@ async fn main() {
                 if let Some(burst_info) = input.burst_info {
                     let invoker_id = input.invoker_id.unwrap();
 
-                    // Get global, local and broadcast ranges
-                    let upper_limit = *burst_info.values().flatten().max().unwrap();
-                    let lower_limit = *burst_info.values().flatten().min().unwrap();
-
-                    let global_range = lower_limit..upper_limit + 1;
-
-                    let local_range = burst_info.get(&invoker_id).unwrap();
-                    let local_range = local_range[0]..local_range[1] + 1;
-
-                    let broadcast_range = 0..burst_info.len() as u32;
-                    let mut vec = burst_info.keys().into_iter().collect::<Vec<&String>>();
-                    vec.sort();
-                    let grup_id = vec.into_iter().position(|x| x == &invoker_id).unwrap() as u32;
-
-                    println!("global_range: {:?}", global_range);
-                    println!("local_range: {:?}", local_range);
-                    println!("broadcast_range: {:?}", broadcast_range);
-                    println!("grup_id: {:?}", grup_id);
-
                     let burst_id = input.transaction_id.unwrap();
 
                     // Initialize middleware
-                    let mw = Middleware::init_global(
-                        MiddlewareArguments::new(
-                            input.rabbitmq.unwrap().uri,
-                            global_range,
-                            local_range.clone(),
-                            broadcast_range,
-                        )
-                        .direct_exchage(format!("{}-direct", burst_id))
-                        .broadcast_exchage_prefix(format!("{}-broadcast", burst_id))
-                        .queue_prefix(format!("{}-queue", burst_id))
-                        .build(),
-                        grup_id,
+                    let group_ranges = burst_info
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.iter().map(|x| *x).collect::<HashSet<u32>>()))
+                        .collect();
+
+                    let burst_options = BurstOptions::new(
+                        burst_id,
+                        burst_info.len() as u32,
+                        group_ranges,
+                        invoker_id,
+                    );
+
+                    let channel_options = TokioChannelOptions::new();
+
+                    let rabbitmq_options = RabbitMQOptions::new(input.rabbitmq.unwrap().uri)
+                        .durable_queues(true)
+                        .ack(true)
+                        .build();
+
+                    let proxies = match BurstMiddleware::create_proxies::<
+                        TokioChannelImpl,
+                        RabbitMQMImpl,
+                        _,
+                        _,
+                    >(
+                        burst_options, channel_options, rabbitmq_options
                     )
                     .await
-                    .expect("Error initializing middleware");
+                    {
+                        Ok(p) => p,
+                        Err(e) => {
+                            eprintln!("{:?}", e);
+                            panic!("Error creating proxies");
+                        }
+                    };
 
                     // Create threads
-                    for (index, input) in inputs.into_iter().enumerate() {
-                        let mut mw = mw.clone();
-                        let start = local_range.start;
-                        handlers.push(std::thread::spawn(move || {
+
+                    for (worker_id, proxy) in proxies {
+                        // TODO: avoid clone
+                        let input = inputs.get(worker_id as usize).unwrap().clone();
+                        handlers.push(thread::spawn(move || {
                             tokio::runtime::Builder::new_multi_thread()
                                 .enable_all()
                                 .build()
                                 .unwrap()
                                 .block_on(async move {
-                                    mw.init_local(start + index as u32)
-                                        .await
-                                        .expect("Error initializing local middleware");
-                                    println!("id: {}", start + index as u32);
+                                    println!("worker_id: {}", worker_id);
                                     println!("input: {:?}", input);
-                                    actionMain(input, Some(mw)).await
+                                    actionMain(input, Some(proxy)).await
                                 })
                         }));
                     }
