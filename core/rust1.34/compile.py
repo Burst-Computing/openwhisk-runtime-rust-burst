@@ -47,14 +47,7 @@ def modify_main_declaration(file_path, main):
     # Replace the synchronous main function with an asynchronous one
     # and add a middleware parameter
     lines = content.splitlines()
-    for i in range(len(lines)):
-        if lines[i].startswith('pub fn %s' % main):
-            lines[i] = lines[i].replace('pub fn %s' % main, 'pub async fn %s' % main)
-            lines[i] = lines[i].replace('args: Value', 'args: Value, burst_middleware: Option<BurstMiddleware>')
-            # Add use statement for the middleware
-            lines.insert(0, 'use burst_communication_middleware::BurstMiddleware;')
-            break
-    
+    lines.insert(0, 'use burst_communication_middleware::BurstMiddleware;')
     
     modified_content = '\n'.join(lines)
 

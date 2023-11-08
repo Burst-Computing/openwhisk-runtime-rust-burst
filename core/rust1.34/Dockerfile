@@ -50,3 +50,4 @@ ENV PYTHONIOENCODING=utf8
 ENV OW_COMPILER=/bin/compile.py
 WORKDIR /action
 ENTRYPOINT ["/bin/proxy"]
+CMD ["-debug"]
