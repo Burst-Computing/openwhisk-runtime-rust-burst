@@ -106,10 +106,12 @@ async fn main() {
                         .iter()
                         .map(|(k, v)| (k.clone(), v.iter().map(|x| *x).collect::<HashSet<u32>>()))
                         .collect();
+                    
+                    let burst_size = burst_info.values().map(|x| x.len()).sum::<usize>();
 
                     let burst_options = BurstOptions::new(
                         burst_id,
-                        burst_info.len() as u32,
+                        burst_size as u32,
                         group_ranges,
                         invoker_id,
                     );
