@@ -47,7 +47,7 @@ def modify_main_declaration(file_path, main):
     # Replace the synchronous main function with an asynchronous one
     # and add a middleware parameter
     lines = content.splitlines()
-    lines.insert(0, 'use burst_communication_middleware::BurstMiddleware;')
+    lines.insert(0, 'use burst_communication_middleware::MiddlewareActorHandle;')
     
     modified_content = '\n'.join(lines)
 
@@ -59,8 +59,7 @@ def modify_main_declaration(file_path, main):
 cargo_action = """[package]
 name = "actions"
 version = "0.1.0"
-authors = ["Roberto Diaz <roberto@theagilemonkeys.com>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 serde_json = "1.0"

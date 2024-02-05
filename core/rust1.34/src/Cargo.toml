@@ -15,9 +15,5 @@
 # limitations under the License.
 #
 [workspace]
-
-members = [
-"action_loop",
-"actions",
-"burst-communication-middleware"
-]
+resolver = "2"
+members = ["action_loop", "actions", "burst-communication-middleware"]

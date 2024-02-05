@@ -17,9 +17,7 @@
 [package]
 name = "action_loop"
 version = "0.1.0"
-authors = ["Roberto Diaz <roberto@theagilemonkeys.com>"]
 edition = "2021"
-resolver = "2"
 
 [dependencies]
 serde = "1.0"

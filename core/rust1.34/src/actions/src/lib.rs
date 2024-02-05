@@ -17,7 +17,7 @@
 
 extern crate serde_json;
 
-use burst_communication_middleware::BurstMiddleware;
+use burst_communication_middleware::MiddlewareActorHandle;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{Error, Value};
 
@@ -36,7 +36,7 @@ fn stranger() -> String {
     "stranger".to_string()
 }
 
-pub async fn main(args: Value, burst_middleware: Option<BurstMiddleware>) -> Result<Value, Error> {
+pub fn main(args: Value, burst_middleware: MiddlewareActorHandle) -> Result<Value, Error> {
     let input: Input = serde_json::from_value(args)?;
     let output = Output {
         greeting: format!("Hello, {}", input.name),
