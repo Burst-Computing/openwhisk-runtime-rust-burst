@@ -129,7 +129,8 @@ fn main() {
                         group_ranges,
                         group_id: input.invoker_id,
                         chunking: input.middleware.chunk_size.is_some(),
-                        chunk_size: input.middleware.chunk_size.unwrap_or(0),
+                        // chunk_size received is in KB
+                        chunk_size: input.middleware.chunk_size.unwrap_or(0) * 1024,
                         tokio_broadcast_channel_size: None,
                     },
                     &runtime,
