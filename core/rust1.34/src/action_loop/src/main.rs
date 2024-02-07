@@ -17,13 +17,9 @@
 
 use actions::main as actionMain;
 
-use burst_communication_middleware::{
-    BurstMessageRelayImpl, BurstMessageRelayOptions, BurstMiddleware, BurstOptions,
-    MiddlewareActorHandle, RabbitMQMImpl, RabbitMQOptions, RedisListImpl, RedisListOptions,
-    RedisStreamImpl, RedisStreamOptions, TokioChannelImpl, TokioChannelOptions,
-};
+use burst_communication_middleware::{create_actors, Config};
 use serde_derive::Deserialize;
-use serde_json::{Error, Value};
+use serde_json::Value;
 use std::{
     collections::{HashMap, HashSet},
     env,
@@ -39,17 +35,26 @@ struct Input {
     invoker_id: String,
     transaction_id: String,
     burst_info: HashMap<String, Vec<u32>>,
-    rabbitmq: RabbitMQ,
+    middleware: Middleware,
     #[serde(flatten)]
     environment: HashMap<String, Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
-struct RabbitMQ {
-    uri: String,
+struct Middleware {
+    backend_info: BackendInfo,
+    chunk_size: Option<usize>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+struct BackendInfo {
+    uri: Option<String>,
+    #[serde(flatten)]
+    backend: Backend,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(tag = "backend_type")]
 enum Backend {
     /// Use S3 as backend
     S3 {
@@ -74,39 +79,13 @@ enum Backend {
     MessageRelay,
 }
 
-#[derive(Debug)]
-struct Arguments {
-    backend: Backend,
-    server: Option<String>,
-    burst_id: String,
-    burst_size: u32,
-    group_ranges: HashMap<String, HashSet<u32>>,
-    group_id: String,
-    chunking: bool,
-    chunk_size: usize,
-    tokio_broadcast_channel_size: Option<usize>,
-}
-
-const MB: usize = 1024 * 1024;
-const DEFAULT_CHUNK_SIZE: usize = 1 * MB;
-
-// new burst input have got the following format:
-// {
-//    "value": [{"name": "Pedro G.", "param2": "value2"}, ..., {"name": "Marc S.", "param2": "value2"}],
-//    "burst_info: {invoker0: [0, 3], invoker1: [4, 13], ..., invokerN: 180, 199]},
-//    "invoker_id": "invoker0",
-//    "transaction_id": "uuid...",
-//    "rabbitmq": {
-//       "uri": "amqp://user:passwd@host:port",
-//    }
-// }
 fn main() {
     let mut fd3 = unsafe { File::from_raw_fd(3) };
     let stdin = stdin();
     for line in stdin.lock().lines() {
         let buffer: String = line.expect("Error reading line");
         println!("buffer: {}", buffer);
-        let parsed_input: Result<Input, Error> = serde_json::from_str(&buffer);
+        let parsed_input: Result<Input, serde_json::Error> = serde_json::from_str(&buffer);
         match parsed_input {
             Ok(input) => {
                 println!("input: {:?}", input);
@@ -127,25 +106,40 @@ fn main() {
 
                 let burst_size = input.burst_info.values().map(|x| x.len()).sum::<usize>();
 
-                let runtime = tokio::runtime::Builder::new_multi_thread()
+                let runtime = match tokio::runtime::Builder::new_multi_thread()
                     .enable_all()
                     .build()
-                    .expect("Error creating tokio runtime");
+                {
+                    Ok(runtime) => runtime,
+                    Err(e) => {
+                        log_error(
+                            &mut fd3,
+                            format!("Error creating tokio runtime: {}", e).into(),
+                        );
+                        panic!("Error creating tokio runtime: {}", e);
+                    }
+                };
 
-                let mut actors = create_actors(
-                    Arguments {
-                        backend: Backend::Rabbitmq,
-                        server: Some(input.rabbitmq.uri),
+                let mut actors = match create_actors(
+                    Config {
+                        backend: input.middleware.backend_info.backend.into(),
+                        server: input.middleware.backend_info.uri,
                         burst_id: input.transaction_id,
                         burst_size: burst_size as u32,
                         group_ranges,
                         group_id: input.invoker_id,
-                        chunking: true,
-                        chunk_size: DEFAULT_CHUNK_SIZE,
+                        chunking: input.middleware.chunk_size.is_some(),
+                        chunk_size: input.middleware.chunk_size.unwrap_or(0),
                         tokio_broadcast_channel_size: None,
                     },
                     &runtime,
-                );
+                ) {
+                    Ok(actors) => actors,
+                    Err(e) => {
+                        log_error(&mut fd3, format!("Error creating actors: {}", e).into());
+                        panic!("Error creating actors: {}", e);
+                    }
+                };
 
                 // Create threads
                 let mut handlers = Vec::new();
@@ -166,7 +160,7 @@ fn main() {
                 for handle in handlers {
                     match handle.join().expect("Error joining thread") {
                         Ok(result) => results.push(result),
-                        Err(error) => log_error(&mut fd3, error),
+                        Err(error) => log_serde_error(&mut fd3, error),
                     }
                 }
 
@@ -177,130 +171,100 @@ fn main() {
                 stdout().flush().expect("Error flushing stdout");
                 stderr().flush().expect("Error flushing stderr");
             }
-            Err(error) => log_error(&mut fd3, error),
+            Err(error) => log_serde_error(&mut fd3, error),
         }
     }
 }
 
-fn create_actors(
-    args: Arguments,
-    tokio_runtime: &tokio::runtime::Runtime,
-) -> HashMap<u32, MiddlewareActorHandle> {
-    let burst_options = BurstOptions::new(
-        args.burst_id.to_string(),
-        args.burst_size,
-        args.group_ranges,
-        args.group_id.to_string(),
-        args.chunking,
-        args.chunk_size,
-    );
-
-    let mut channel_options = TokioChannelOptions::new();
-    if let Some(size) = args.tokio_broadcast_channel_size {
-        channel_options.broadcast_channel_size(size);
-    }
-
-    let proxies = tokio_runtime.block_on(async move {
-        match &args.backend {
+impl From<Backend> for burst_communication_middleware::Backend {
+    fn from(backend: Backend) -> Self {
+        match backend {
             Backend::S3 {
                 bucket,
                 region,
                 access_key_id,
                 secret_access_key,
                 session_token,
-            } => {
-                let mut options = burst_communication_middleware::S3Options::default();
-                if let Some(bucket) = bucket {
-                    options.bucket(bucket.to_string());
-                }
-                if let Some(region) = region {
-                    options.region(region.to_string());
-                }
-                if let Some(access_key_id) = access_key_id {
-                    options.access_key_id(access_key_id.to_string());
-                }
-                if let Some(secret_access_key) = secret_access_key {
-                    options.secret_access_key(secret_access_key.to_string());
-                }
-                options.session_token(session_token.clone());
-                options.endpoint(args.server.clone());
-
-                BurstMiddleware::create_proxies::<
-                    TokioChannelImpl,
-                    burst_communication_middleware::S3Impl,
-                    _,
-                    _,
-                >(burst_options, channel_options, options)
-                .await
-            }
-            Backend::RedisStream => {
-                let mut options = RedisStreamOptions::default();
-                if let Some(server) = &args.server {
-                    options.redis_uri(server.to_string());
-                }
-
-                BurstMiddleware::create_proxies::<TokioChannelImpl, RedisStreamImpl, _, _>(
-                    burst_options,
-                    channel_options,
-                    options,
-                )
-                .await
-            }
-            Backend::RedisList => {
-                let mut options = RedisListOptions::default();
-                if let Some(server) = &args.server {
-                    options.redis_uri(server.to_string());
-                }
-                BurstMiddleware::create_proxies::<TokioChannelImpl, RedisListImpl, _, _>(
-                    burst_options,
-                    channel_options,
-                    options,
-                )
-                .await
-            }
-            Backend::Rabbitmq => {
-                let mut options = RabbitMQOptions::default()
-                    .durable_queues(true)
-                    .ack(true)
-                    .build();
-                if let Some(server) = &args.server {
-                    options.rabbitmq_uri(server.to_string());
-                }
-                BurstMiddleware::create_proxies::<TokioChannelImpl, RabbitMQMImpl, _, _>(
-                    burst_options,
-                    channel_options,
-                    options,
-                )
-                .await
-            }
-            Backend::MessageRelay => {
-                let mut options = BurstMessageRelayOptions::default();
-                if let Some(server) = &args.server {
-                    options.server_uri(server.to_string());
-                }
-                BurstMiddleware::create_proxies::<TokioChannelImpl, BurstMessageRelayImpl, _, _>(
-                    burst_options,
-                    channel_options,
-                    options,
-                )
-                .await
-            }
+            } => burst_communication_middleware::Backend::S3 {
+                bucket,
+                region,
+                access_key_id,
+                secret_access_key,
+                session_token,
+            },
+            Backend::RedisStream => burst_communication_middleware::Backend::RedisStream,
+            Backend::RedisList => burst_communication_middleware::Backend::RedisList,
+            Backend::Rabbitmq => burst_communication_middleware::Backend::Rabbitmq,
+            Backend::MessageRelay => burst_communication_middleware::Backend::MessageRelay,
         }
-    });
-
-    match proxies {
-        Ok(proxies) => proxies
-            .into_iter()
-            .map(|(id, proxy)| {
-                let actor = MiddlewareActorHandle::new(proxy, tokio_runtime);
-                (id, actor)
-            })
-            .collect::<HashMap<u32, MiddlewareActorHandle>>(),
-        Err(error) => panic!("Error creating proxies: {}", error),
     }
 }
 
-fn log_error(fd3: &mut File, error: Error) {
+fn log_serde_error(fd3: &mut File, error: serde_json::Error) {
     writeln!(fd3, "{{\"error\":\"{}\"}}\n", error).expect("Error writing on fd3");
     eprintln!("error: {}", error);
+}
+
+fn log_error(fd3: &mut File, error: Box<dyn std::error::Error>) {
+    writeln!(fd3, "{{\"error\":\"{}\"}}\n", error).expect("Error writing on fd3");
+    eprintln!("error: {}", error);
+}
+
+mod test {
+    #[test]
+    fn test_deserialize_rabbitmq() {
+        let rabbitmq = serde_json::json!({
+            "value": [{"name": "Pedro G.", "param2": "value2"}, {"name": "Marc S.", "param2": "value2"}],
+            "invoker_id": "invoker0",
+            "transaction_id": "uuid...",
+            "middleware": {
+                "backend_info": {
+                    "uri": "amqp://user:xxxxxx@xxxx:port",
+                    "backend_type": "Rabbitmq"
+                },
+            },
+            "burst_info": {
+                "invoker0": [0, 1]
+            },
+            "environment": {
+                "api_host": "https://apihost.com",
+                "api_key": "apikey"
+            }
+        });
+
+        let parsed_input: Result<crate::Input, serde_json::Error> =
+            serde_json::from_value(rabbitmq);
+        println!("{:?}", parsed_input);
+        assert!(parsed_input.is_ok())
+    }
+
+    #[test]
+    fn test_deserialize_s3() {
+        let s3 = serde_json::json!({
+            "value": [{"name": "Pedro G.", "param2": "value2"}, {"name": "Marc S.", "param2": "value2"}],
+            "invoker_id": "invoker0",
+            "transaction_id": "uuid...",
+            "middleware": {
+                "backend_info": {
+                    "bucket": "example-bucket",
+                    "region": "us-east-1",
+                    "access_key_id": "ACCESS_KEY_ID",
+                    "secret_access_key": "SECRET_ACCESS_KEY",
+                    "session_token": "SESSION_TOKEN",
+                    "backend_type": "S3"
+                },
+            },
+            "burst_info": {
+                "invoker0": [0, 1]
+            },
+            "environment": {
+                "api_host": "https://apihost.com",
+                "api_key": "apikey"
+            }
+        });
+
+        let parsed_input: Result<crate::Input, serde_json::Error> = serde_json::from_value(s3);
+        println!("{:?}", parsed_input);
+        assert!(parsed_input.is_ok())
+    }
 }
