@@ -38,6 +38,7 @@ struct Input {
     middleware: Middleware,
     #[serde(flatten)]
     environment: HashMap<String, Value>,
+    debug: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -89,6 +90,11 @@ fn main() {
         match parsed_input {
             Ok(input) => {
                 println!("input: {:?}", input);
+                if (input.debug) {
+                    print!("*****Logs debug enabled*****");
+                    env::set_var("RUST_LOG", "debug");
+                    env::set_var("RUST_BACKTRACE", "1");
+                }
                 for (key, val) in input.environment {
                     if let Some(string_value) = val.as_str() {
                         env::set_var(format!("__OW_{}", key.to_uppercase()), string_value);
