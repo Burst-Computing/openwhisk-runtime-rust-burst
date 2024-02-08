@@ -149,16 +149,18 @@ fn main() {
                     }
                 };
 
+                let mut inputs = input.value;
+
                 // Create threads
                 let mut handlers = Vec::new();
-                for (id, input) in input.value.into_iter().enumerate() {
-                    let actor = actors
-                        .remove(&(id as u32))
-                        .expect(format!("Error getting actor for id: {}", id).as_str());
+                for (id, actor) in actors.drain() {
+                    let value = inputs
+                        .pop()
+                        .expect(format!("Error getting value for actor {}", id).as_str());
                     handlers.push(thread::spawn(move || {
                         println!("worker_id: {}", id);
-                        println!("input: {:?}", input);
-                        actionMain(input, actor)
+                        println!("input: {:?}", value);
+                        actionMain(value, actor)
                     }));
                 }
 
