@@ -34,7 +34,7 @@ struct Input {
     value: Vec<Value>,
     invoker_id: String,
     transaction_id: String,
-    burst_info: HashMap<String, Vec<u32>>,
+    burst_info: HashMap<String, (u32, u32)>,
     middleware: Middleware,
     #[serde(flatten)]
     environment: HashMap<String, Value>,
@@ -107,10 +107,11 @@ fn main() {
                 let group_ranges: HashMap<String, HashSet<u32>> = input
                     .burst_info
                     .iter()
-                    .map(|(k, v)| (k.clone(), v.iter().map(|x| *x).collect::<HashSet<u32>>()))
+                    // both start and end are inclusive
+                    .map(|(k, v)| (k.clone(), (v.0..=v.1).collect()))
                     .collect();
 
-                let burst_size = input.burst_info.values().map(|x| x.len()).sum::<usize>();
+                let burst_size = group_ranges.values().fold(0, |acc, set| acc + set.len());
 
                 let runtime = match tokio::runtime::Builder::new_multi_thread()
                     .enable_all()
@@ -231,7 +232,7 @@ mod test {
                 },
             },
             "burst_info": {
-                "invoker0": [0, 1]
+                "invoker0": [0, 3]
             },
             "environment": {
                 "api_host": "https://apihost.com",
