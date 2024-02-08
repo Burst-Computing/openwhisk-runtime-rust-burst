@@ -18,6 +18,7 @@
 use actions::main as actionMain;
 
 use burst_communication_middleware::{create_actors, Config};
+use env_logger;
 use serde_derive::Deserialize;
 use serde_json::Value;
 use std::{
@@ -91,9 +92,10 @@ fn main() {
             Ok(input) => {
                 println!("input: {:?}", input);
                 if (input.debug) {
-                    print!("*****Logs debug enabled*****");
                     env::set_var("RUST_LOG", "debug");
-                    env::set_var("RUST_BACKTRACE", "1");
+                    env::set_var("RUST_BACKTRACE", "full");
+                    println!("****Debug logs enabled*****");
+                    env_logger::init();
                 }
                 for (key, val) in input.environment {
                     if let Some(string_value) = val.as_str() {
