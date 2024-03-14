@@ -70,6 +70,8 @@ enum Backend {
         secret_access_key: Option<String>,
         /// S3 session token
         session_token: Option<String>,
+        // Semphore permits
+        semaphore_permits: Option<usize>,
     },
     /// Use Redis Streams as backend
     RedisStream,
@@ -91,7 +93,8 @@ fn main() {
         match parsed_input {
             Ok(input) => {
                 println!("input: {:?}", input);
-                if (input.debug) {
+                if input.debug {
+                    print!("*****Logs debug enabled*****");
                     env::set_var("RUST_LOG", "debug");
                     env::set_var("RUST_BACKTRACE", "full");
                     println!("****Debug logs enabled*****");
@@ -158,7 +161,7 @@ fn main() {
                 for (id, actor) in actors.drain() {
                     let value = inputs
                         .pop()
-                        .expect(format!("Error getting value for actor {}", id).as_str());
+                        .unwrap_or_else(|| panic!("Error getting value for actor {}", id));
                     handlers.push(thread::spawn(move || {
                         println!("worker_id: {}", id);
                         println!("input: {:?}", value);
@@ -197,12 +200,14 @@ impl From<Backend> for burst_communication_middleware::Backend {
                 access_key_id,
                 secret_access_key,
                 session_token,
+                semaphore_permits,
             } => burst_communication_middleware::Backend::S3 {
                 bucket,
                 region,
                 access_key_id,
                 secret_access_key,
                 session_token,
+                semaphore_permits,
             },
             Backend::RedisStream => burst_communication_middleware::Backend::RedisStream,
             Backend::RedisList => burst_communication_middleware::Backend::RedisList,
