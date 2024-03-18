@@ -74,7 +74,7 @@ def build(tgt_dir):
      cmd = ["cargo", "build"]
      bin_dir = "debug"
      if "RELEASE" in os.environ:
-         cmd += "--release"
+         cmd.append("--release")
          bin_dir = "release"
      env = {
          "CARGO_HOME": "/usr/local/cargo",
