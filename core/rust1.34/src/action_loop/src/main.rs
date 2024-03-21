@@ -18,7 +18,6 @@
 use actions::main as actionMain;
 
 use burst_communication_middleware::{create_actors, Config};
-use env_logger;
 use serde_derive::Deserialize;
 use serde_json::Value;
 use std::{
