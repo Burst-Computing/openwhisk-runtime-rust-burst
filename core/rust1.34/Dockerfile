@@ -33,7 +33,7 @@ RUN curl -sL \
   && cd openwhisk-runtime-go-*/main\
   && GO111MODULE=on CGO_ENABLED=0 go build -o /bin/proxy
 
-FROM rust:1.76.0
+FROM rust:1.77.2
 
 # select the builder to use
 ARG GO_PROXY_BUILD_FROM=source
