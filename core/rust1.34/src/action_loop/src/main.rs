@@ -153,20 +153,24 @@ fn main() {
                     }
                 };
 
-                let mut inputs = input.value;
-
                 // Create threads
-                let mut handlers = Vec::new();
-                for (id, actor) in actors.drain() {
-                    let value = inputs
-                        .pop()
-                        .unwrap_or_else(|| panic!("Error getting value for actor {}", id));
+                let inputs = input.value;
+                let mut actors = actors
+                    .into_iter()
+                    .collect::<Vec<_>>();
+                actors.sort_by_key(|actor| actor.1.info().worker_id);
+                let mut handlers = Vec::with_capacity(actors.len());
+                inputs.into_iter().enumerate().zip(actors).for_each(|((i, value), actor)| {
                     handlers.push(thread::spawn(move || {
-                        println!("worker_id: {}", id);
-                        println!("input: {:?}", value);
-                        actionMain(value, actor)
+                        println!(
+                            "i: {}, worker_id: {}, value: {:?}",
+                            i,
+                            actor.1.info().worker_id,
+                            value
+                        );
+                        actionMain(value, actor.1)
                     }));
-                }
+                });
 
                 // new burst output have got the following format:
                 // [result1, result2, ..., resultN]
