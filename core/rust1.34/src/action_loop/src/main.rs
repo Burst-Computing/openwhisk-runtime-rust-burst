@@ -213,7 +213,6 @@ impl From<Backend> for burst_communication_middleware::Backend {
             Backend::RedisStream => burst_communication_middleware::Backend::RedisStream,
             Backend::RedisList => burst_communication_middleware::Backend::RedisList,
             Backend::Rabbitmq => burst_communication_middleware::Backend::Rabbitmq,
-            Backend::MessageRelay => burst_communication_middleware::Backend::MessageRelay,
         }
     }
 }
