@@ -78,8 +78,6 @@ enum Backend {
     RedisList,
     /// Use RabbitMQ as backend
     Rabbitmq,
-    /// Use burst message relay as backend
-    MessageRelay,
 }
 
 fn main() {
@@ -234,7 +232,7 @@ mod test {
     #[test]
     fn test_deserialize_rabbitmq() {
         let rabbitmq = serde_json::json!({
-            "value": [{"name": "Pedro G.", "param2": "value2"}, {"name": "Marc S.", "param2": "value2"}],
+            "value": [{"name": "John", "param2": "value2"}, {"name": "Thomas", "param2": "value2"}],
             "invoker_id": "invoker0",
             "transaction_id": "uuid...",
             "middleware": {
@@ -261,7 +259,7 @@ mod test {
     #[test]
     fn test_deserialize_s3() {
         let s3 = serde_json::json!({
-            "value": [{"name": "Pedro G.", "param2": "value2"}, {"name": "Marc S.", "param2": "value2"}],
+            "value": [{"name": "John", "param2": "value2"}, {"name": "Thomas", "param2": "value2"}],
             "invoker_id": "invoker0",
             "transaction_id": "uuid...",
             "middleware": {
