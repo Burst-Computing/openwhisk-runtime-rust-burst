@@ -71,6 +71,10 @@ enum Backend {
         session_token: Option<String>,
         // Semphore permits
         semaphore_permits: Option<usize>,
+        // Retry
+        retry: Option<u32>,
+        // Wait time
+        wait_time: Option<f64>,
     },
     /// Use Redis Streams as backend
     RedisStream,
@@ -129,7 +133,7 @@ fn main() {
                     }
                 };
 
-                let mut actors = match create_actors(
+                let actors = match create_actors(
                     Config {
                         backend: input.middleware.backend_info.backend.into(),
                         server: input.middleware.backend_info.uri,
@@ -153,22 +157,24 @@ fn main() {
 
                 // Create threads
                 let inputs = input.value;
-                let mut actors = actors
-                    .into_iter()
-                    .collect::<Vec<_>>();
+                let mut actors = actors.into_iter().collect::<Vec<_>>();
                 actors.sort_by_key(|actor| actor.1.info().worker_id);
                 let mut handlers = Vec::with_capacity(actors.len());
-                inputs.into_iter().enumerate().zip(actors).for_each(|((i, value), actor)| {
-                    handlers.push(thread::spawn(move || {
-                        println!(
-                            "i: {}, worker_id: {}, value: {:?}",
-                            i,
-                            actor.1.info().worker_id,
-                            value
-                        );
-                        actionMain(value, actor.1)
-                    }));
-                });
+                inputs
+                    .into_iter()
+                    .enumerate()
+                    .zip(actors)
+                    .for_each(|((i, value), actor)| {
+                        handlers.push(thread::spawn(move || {
+                            println!(
+                                "i: {}, worker_id: {}, value: {:?}",
+                                i,
+                                actor.1.info().worker_id,
+                                value
+                            );
+                            actionMain(value, actor.1)
+                        }));
+                    });
 
                 // new burst output have got the following format:
                 // [result1, result2, ..., resultN]
@@ -202,6 +208,8 @@ impl From<Backend> for burst_communication_middleware::Backend {
                 secret_access_key,
                 session_token,
                 semaphore_permits,
+                retry,
+                wait_time,
             } => burst_communication_middleware::Backend::S3 {
                 bucket,
                 region,
@@ -209,6 +217,8 @@ impl From<Backend> for burst_communication_middleware::Backend {
                 secret_access_key,
                 session_token,
                 semaphore_permits,
+                retry,
+                wait_time,
             },
             Backend::RedisStream => burst_communication_middleware::Backend::RedisStream,
             Backend::RedisList => burst_communication_middleware::Backend::RedisList,
